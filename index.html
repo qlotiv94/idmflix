@@ -28,7 +28,7 @@
 
             <nav class="space-y-4 flex-1">
                 <p class="text-[10px] font-black text-sky-300 uppercase tracking-[0.2em] mb-4">Cloud Navigation</p>
-                <div class="w-full flex items-center gap-4 px-6 py-4 bg-sky-50 text-sky-600 rounded-[1.5rem] font-bold text-sm cursor-default">
+                <div class="w-full flex items-center gap-4 px-6 py-4 bg-sky-50 text-sky-600 rounded-[1.5rem] font-bold text-sm">
                     <i data-lucide="layout-grid" class="w-5 h-5"></i> Dashboard
                 </div>
             </nav>
@@ -44,30 +44,42 @@
             </div>
         </aside>
 
-        <main class="flex-1 lg:ml-80 p-8 lg:p-16">
+        <main class="flex-1 lg:ml-80 p-8 lg:p-16 pb-32">
             <header class="flex flex-col md:flex-row justify-between items-start md:items-center gap-8 mb-20">
                 <div>
-                    <h2 class="text-5xl font-black text-sky-950 tracking-tighter">Multi-Cloud</h2>
-                    <p class="text-sky-400 font-medium text-lg mt-2">Status Node: <span class="text-sky-600 font-bold underline decoration-sky-200">R2 & Firebase Active</span></p>
+                    <h2 class="text-5xl font-black text-sky-950 tracking-tighter text-slate-800">Multi-Cloud</h2>
+                    <p class="text-sky-400 font-medium text-lg mt-2">Status Node: <span class="text-sky-600 font-bold underline decoration-sky-200 uppercase text-sm">R2 & Firebase Active</span></p>
                 </div>
                 <label class="bg-sky-600 hover:bg-sky-700 text-white px-10 py-5 rounded-[2rem] font-black text-xs uppercase tracking-[0.2em] shadow-2xl shadow-sky-200 transition-all cursor-pointer flex items-center gap-3 active:scale-95">
                     <i data-lucide="upload-cloud" class="w-6 h-6"></i> Unggah File
-                    <input type="file" class="hidden" id="mainUpload" onchange="uploadSim(event)">
+                    <input type="file" class="hidden" id="mainUpload" onchange="handleUpload(event)">
                 </label>
             </header>
 
             <div id="files-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-                <div id="empty-state" class="col-span-full py-40 text-center glass-card rounded-[4rem] border-2 border-dashed border-sky-100">
-                    <i data-lucide="folder-open" class="w-12 h-12 text-sky-200 mx-auto mb-8"></i>
-                    <h3 class="text-3xl font-black text-sky-950">Mulai Unggah</h3>
-                    <p class="text-sky-400 mt-4 font-medium text-lg">File akan tersimpan permanen di cloud anda.</p>
                 </div>
-            </div>
         </main>
     </div>
 
-    <div id="notif" class="fixed bottom-12 right-12 bg-sky-950 text-white px-8 py-5 rounded-[2rem] shadow-2xl flex items-center gap-4 transition-all translate-y-40 z-[100]">
-        <span id="notif-msg" class="font-bold text-sm">Pesan sistem...</span>
+    <div id="upload-overlay" class="fixed inset-x-0 bottom-0 p-6 z-[100] translate-y-full transition-transform duration-500 ease-in-out">
+        <div class="max-w-xl mx-auto bg-white rounded-[2.5rem] shadow-[0_-20px_60px_-15px_rgba(0,0,0,0.1)] p-8 border border-sky-50">
+            <div class="flex items-center justify-between mb-6">
+                <div class="flex items-center gap-4">
+                    <div class="w-12 h-12 bg-sky-100 text-sky-600 rounded-2xl flex items-center justify-center animate-pulse">
+                        <i data-lucide="file-up" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <h4 id="progress-filename" class="font-bold text-slate-800 truncate w-40">nama-file.apk</h4>
+                        <p id="progress-stats" class="text-xs text-slate-400 font-medium">0 MB / 0 MB</p>
+                    </div>
+                </div>
+                <span id="progress-text" class="text-2xl font-black text-sky-600 italic">0%</span>
+            </div>
+            
+            <div class="w-full h-3 bg-sky-50 rounded-full overflow-hidden mb-2">
+                <div id="progress-bar" class="h-full bg-sky-500 shadow-[0_0_15px_rgba(14,165,233,0.5)] transition-all duration-300 w-0%"></div>
+            </div>
+        </div>
     </div>
 
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -87,124 +99,109 @@
             appId: "1:305447137906:web:3dcadf2a9ca348fb1ac8eb"
         };
 
-        // Init Firebase
         firebase.initializeApp(firebaseConfig);
         const db = firebase.firestore();
-        const storageLimit = 20 * 1024 * 1024 * 1024; // 20GB
-
         lucide.createIcons();
 
-        // 1. Ambil Data Real-time dari Firebase
+        // FUNGSI UPLOAD DENGAN PROGRESS
+        function handleUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const overlay = document.getElementById('upload-overlay');
+            const bar = document.getElementById('progress-bar');
+            const text = document.getElementById('progress-text');
+            const stats = document.getElementById('progress-stats');
+            const fname = document.getElementById('progress-filename');
+
+            // Reset & Tampilkan Overlay
+            fname.innerText = file.name;
+            overlay.classList.remove('translate-y-full');
+            
+            const xhr = new XMLHttpRequest();
+            xhr.open("POST", WORKER_URL, true);
+            xhr.setRequestHeader("X-File-Name", file.name);
+
+            // Update Progress
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    const uploadedMB = (e.loaded / (1024 * 1024)).toFixed(2);
+                    const totalMB = (e.total / (1024 * 1024)).toFixed(2);
+                    
+                    bar.style.width = percent + "%";
+                    text.innerText = percent + "%";
+                    stats.innerText = `${uploadedMB} MB / ${totalMB} MB`;
+                }
+            };
+
+            xhr.onload = async () => {
+                if (xhr.status === 200) {
+                    // Simpan ke Firebase
+                    await db.collection("files").add({
+                        name: file.name,
+                        size: file.size,
+                        provider: 'R2',
+                        date: new Date().toLocaleDateString('id-ID'),
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    
+                    setTimeout(() => overlay.classList.add('translate-y-full'), 2000);
+                    alert("Berhasil!");
+                } else {
+                    alert("Gagal mengunggah!");
+                    overlay.classList.add('translate-y-full');
+                }
+            };
+
+            xhr.onerror = () => {
+                alert("Koneksi terputus!");
+                overlay.classList.add('translate-y-full');
+            };
+
+            xhr.send(file);
+            event.target.value = '';
+        }
+
+        // Load Data Files
         function loadFiles() {
-            db.collection("files").orderBy("timestamp", "desc").onSnapshot((snapshot) => {
-                const files = [];
-                let totalUsed = 0;
-                snapshot.forEach((doc) => {
-                    const data = doc.data();
-                    files.push({ id: doc.id, ...data });
-                    totalUsed += data.size || 0;
+            db.collection("files").orderBy("timestamp", "desc").onSnapshot(snapshot => {
+                const grid = document.getElementById('files-grid');
+                let html = '';
+                let totalSize = 0;
+                
+                snapshot.forEach(doc => {
+                    const f = doc.data();
+                    totalSize += f.size || 0;
+                    html += `
+                        <div class="glass-card p-8 rounded-[3rem] animate-fade group transition-all hover:border-sky-300">
+                            <div class="flex justify-between items-start mb-10">
+                                <div class="p-5 bg-sky-50 text-sky-600 rounded-2xl group-hover:bg-sky-600 group-hover:text-white transition-all">
+                                    <i data-lucide="file-text" class="w-8 h-8"></i>
+                                </div>
+                                <div class="flex gap-2">
+                                    <a href="${R2_PUBLIC_URL}/${encodeURIComponent(f.name)}" target="_blank" class="p-2 text-sky-400 hover:text-sky-600">
+                                        <i data-lucide="download" class="w-6 h-6"></i>
+                                    </a>
+                                </div>
+                            </div>
+                            <h4 class="font-bold text-xl text-sky-950 truncate">${f.name}</h4>
+                            <div class="flex items-center justify-between mt-10 pt-6 border-t border-sky-50">
+                                <span class="text-[10px] font-black text-sky-400 uppercase tracking-widest">${(f.size/(1024*1024)).toFixed(2)} MB</span>
+                                <span class="text-[9px] font-black px-3 py-1 bg-sky-50 text-sky-500 rounded-full uppercase tracking-widest">${f.provider}</span>
+                            </div>
+                        </div>`;
                 });
-                render(files, totalUsed);
-            }, (err) => {
-                console.error(err);
-                showNotif("Gagal sinkron database!");
+                grid.innerHTML = html;
+                lucide.createIcons();
+                
+                // Update quota bar
+                const percent = (totalSize / (20 * 1024 * 1024 * 1024)) * 100;
+                document.getElementById('usage-bar').style.width = percent + "%";
+                document.getElementById('usage-percent').innerText = percent.toFixed(2) + "%";
             });
         }
 
-        // 2. Fungsi Upload Utama
-        async function uploadSim(e) {
-            const file = e.target.files[0];
-            if(!file) return;
-
-            showNotif("Mengunggah ke Cloud R2...");
-
-            try {
-                // Upload fisik ke Cloudflare via Worker
-                const response = await fetch(WORKER_URL, {
-                    method: "POST",
-                    headers: { "X-File-Name": file.name },
-                    body: file
-                });
-
-                if (!response.ok) throw new Error("Worker menolak unggahan");
-
-                // Simpan metadata ke Firestore jika upload fisik berhasil
-                await db.collection("files").add({
-                    name: file.name,
-                    size: file.size,
-                    provider: 'R2',
-                    date: new Date().toLocaleDateString('id-ID'),
-                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
-                });
-
-                showNotif("Berhasil Unggah!");
-            } catch (err) {
-                console.error(err);
-                showNotif("Gagal: " + err.message);
-            }
-            e.target.value = ''; // Reset input
-        }
-
-        // 3. Fungsi Hapus
-        async function deleteFile(id) {
-            if(confirm("Hapus catatan file ini?")) {
-                try {
-                    await db.collection("files").doc(id).delete();
-                    showNotif("Data dihapus!");
-                } catch (err) {
-                    showNotif("Gagal menghapus!");
-                }
-            }
-        }
-
-        // 4. Render Tampilan
-        function render(files, totalUsed) {
-            const grid = document.getElementById('files-grid');
-            const empty = document.getElementById('empty-state');
-            
-            if(files.length > 0) {
-                empty.classList.add('hidden');
-                grid.innerHTML = files.map(f => `
-                    <div class="glass-card p-8 rounded-[3rem] animate-fade group transition-all hover:border-sky-300">
-                        <div class="flex justify-between items-start mb-10">
-                            <div class="p-5 bg-sky-50 text-sky-600 rounded-2xl group-hover:bg-sky-600 group-hover:text-white transition-all">
-                                <i data-lucide="file-text" class="w-8 h-8"></i>
-                            </div>
-                            <div class="flex gap-2">
-                                <a href="${R2_PUBLIC_URL}/${encodeURIComponent(f.name)}" target="_blank" class="p-2 text-sky-400 hover:text-sky-600 transition-colors">
-                                    <i data-lucide="download" class="w-6 h-6"></i>
-                                </a>
-                                <button onclick="deleteFile('${f.id}')" class="text-sky-200 hover:text-red-500 p-2 transition-colors">
-                                    <i data-lucide="trash-2" class="w-6 h-6"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <h4 class="font-bold text-xl text-sky-950 truncate" title="${f.name}">${f.name}</h4>
-                        <div class="flex items-center justify-between mt-10 pt-6 border-t border-sky-50">
-                            <span class="text-[10px] font-black text-sky-400 uppercase tracking-widest">${(f.size/1024).toFixed(1)} KB</span>
-                            <span class="text-[9px] font-black px-3 py-1 bg-sky-50 text-sky-500 rounded-full uppercase tracking-widest">Node: ${f.provider}</span>
-                        </div>
-                    </div>
-                `).join('');
-                lucide.createIcons();
-            } else {
-                empty.classList.remove('hidden');
-                grid.innerHTML = '';
-            }
-            
-            const percent = (totalUsed / storageLimit) * 100;
-            document.getElementById('usage-bar').style.width = Math.min(percent, 100) + '%';
-            document.getElementById('usage-percent').innerText = percent.toFixed(2) + '%';
-        }
-
-        function showNotif(msg) {
-            const n = document.getElementById('notif');
-            document.getElementById('notif-msg').innerText = msg;
-            n.classList.remove('translate-y-40');
-            setTimeout(() => n.classList.add('translate-y-40'), 3000);
-        }
-
-        // Jalankan
         loadFiles();
     </script>
 </body>
